@@ -2,10 +2,15 @@
 
 var MINE = "💣";
 var FLAG = "🚩";
+var HURT = '❤️';
 var gStartTime;
 var gTimeInterval;
 var isLoseGame = false;
 var isGameOver = false;
+var isFirstClickMine = false;
+var gNumOfHint = 3;
+var isHintOn = false;
+var gLivesCount = 1;
 var gGame = {
   isOn: false,
   shownCount: 0,
@@ -23,9 +28,11 @@ var gBoard;
 
 function initGame() {
   gBoard = buildBoard();
-  addMinesToModel();
+  addRandMines();
   addNegsToModal();
   renderBoard();
+  renderHurts();
+  console.log(gBoard);
 }
 
 function renderBoard() {
@@ -74,6 +81,7 @@ function createCell() {
     isShown: false,
     isMine: false,
     isMarked: false,
+    isRecursived: false,
   };
 }
 
@@ -115,7 +123,7 @@ function setMinesNegsCount(i, j) {
     }
   }
   if (gBoard[i][j].isMine) {
-    negCounter = -1;
+    negCounter = "B";
   }
   return negCounter;
 }
@@ -123,10 +131,20 @@ function setMinesNegsCount(i, j) {
 function cellClicked(elCell, i, j, ev) {
   if (isLoseGame || isGameOver || gBoard[i][j].isShown) return;
   //start the game
+  if (isHintOn) {
+    hintRevealNegs(i, j);
+    return;
+  }
   if (!gGame.isOn) {
     gGame.isOn = true;
     gStartTime = new Date();
     gTimeInterval = setInterval(renderTime, 500);
+    // first click and a mine
+    if (gBoard[i][j].isMine) {
+      addRandMineFirstClick();
+      gBoard[i][j].isMine = false;
+      addNegsToModal();
+    }
   }
   if (ev.type == "contextmenu") {
     // right click
@@ -142,8 +160,14 @@ function cellClicked(elCell, i, j, ev) {
   } else if (!gBoard[i][j].isMarked) {
     // left click
     if (gBoard[i][j].isMine) {
+      gLivesCount--;
+      renderHurts();
+      gBoard[i][j].isShown = true;
+      renderBoard();
       // end game
-      loseGame();
+      if (gLivesCount === 0) {
+        loseGame();
+      }
     } else {
       if (gBoard[i][j].minesAroundCount === 0) {
         revealNegs(i, j);
@@ -158,7 +182,7 @@ function cellClicked(elCell, i, j, ev) {
   winGame(checkGameOver());
 }
 
-function addMinesToModel() {
+function addRandMines() {
   var rands = [];
 
   var tempBoard = [];
@@ -168,7 +192,6 @@ function addMinesToModel() {
       tempBoard[i][j] = { i, j };
     }
   }
-
   for (var i = 0; i < gLevels[level].MINES; i++) {
     var randRow = Math.floor(Math.random() * gLevels[level].SIZE);
     var randCall = Math.floor(Math.random() * tempBoard[randRow].length);
@@ -196,6 +219,7 @@ function loseGame() {
   isLoseGame = true;
   renderBoard();
   var elLose = document.querySelector(".end-game");
+  elLose.classList.add("end-game-style");
   elLose.innerHTML = `<h2 class="win-game">You lost the game...</h2>`;
 }
 
@@ -217,12 +241,16 @@ function winGame(isWin) {
   if (!isWin) return;
   endGame();
   var elWin = document.querySelector(".end-game");
+  document.querySelector(".end-game").classList.add("end-game-style");
   elWin.innerHTML = `<h2 class="win-game">You wan the game in ${gGame.secsPassed}[sec]</h2>`;
 }
 
 function endGame() {
+  gLivesCount = 3;
   clearInterval(gTimeInterval);
   isGameOver = true;
+  document.querySelector(".end-game").classList.remove("end-game-style");
+  isFirstClickMine = false;
 }
 
 function revealNegs(i, j) {
@@ -244,7 +272,6 @@ function revealNegs(i, j) {
   if (j === gLevels[level].SIZE - 1) {
     jEnd = gLevels[level].SIZE - 1;
   }
-debugger
   // count neighbors
   for (var rowIdx = iStart; rowIdx <= iEnd; rowIdx++) {
     for (var callIdx = jStart; callIdx <= jEnd; callIdx++) {
@@ -253,10 +280,14 @@ debugger
         !gBoard[rowIdx][callIdx].isMarked
       ) {
         gBoard[rowIdx][callIdx].isShown = true;
-        // if (!gBoard[rowIdx][callIdx].minesAroundCount && !gBoard[rowIdx][callIdx].isShown ) {
-        //     revealNegs(rowIdx, callIdx);
-        //     console.log('0');
-        // }
+        if (
+          !gBoard[rowIdx][callIdx].minesAroundCount &&
+          (rowIdx !== i || callIdx !== j) &&
+          !gBoard[rowIdx][callIdx].isRecursived
+        ) {
+          gBoard[rowIdx][callIdx].isRecursived = true;
+          revealNegs(rowIdx, callIdx);
+        }
       }
     }
   }
@@ -266,6 +297,8 @@ debugger
 
 function newTable(newLevel) {
   level = newLevel;
+  gLivesCount = level + 1;
+  renderHurts();
   restartGame();
 }
 
@@ -281,4 +314,88 @@ function restartGame() {
   clearInterval(gTimeInterval);
   var elLose = document.querySelector(".end-game");
   elLose.innerHTML = ``;
+  document.querySelector(".end-game").classList.remove("end-game-style");
+  // hints
+  var elHints = document.querySelectorAll(".hint");
+  for (var i = 0; i < elHints.length; i++) {
+    if (!elHints[i].classList.contains("hint-on")) {
+      elHints[i].classList.add("hint-on");
+    }
+    elHints[i].src = "image/light-on.PNG";
+  }
+}
+
+function addRandMineFirstClick() {
+  var tempRands = [];
+  for (var i = 0; i < gLevels[level].SIZE; i++) {
+    for (var j = 0; j < gLevels[level].SIZE; j++) {
+      if (!gBoard[i][j].isMine) {
+        tempRands[i] = { i, j };
+      }
+    }
+  }
+  var randPos = Math.floor(Math.random() * tempRands.length);
+  var randValRow = tempRands[randPos].i;
+  var randValCall = tempRands[randPos].j;
+  gBoard[randValRow][randValCall].isMine = true;
+}
+
+function hintClicked(elHint) {
+  if (!elHint.classList.contains("hint-on") || isLoseGame || isGameOver) return;
+  console.log(elHint);
+  elHint.classList.remove("hint-on");
+  elHint.src = "image/light-off.PNG";
+  isHintOn = true;
+}
+
+function hintRevealNegs(i, j) {
+  var iStart = i - 1;
+  var iEnd = i + 1;
+  var jStart = j - 1;
+  var jEnd = j + 1;
+
+  // verify the area
+  if (i === 0) {
+    iStart = 0;
+  }
+  if (i === gLevels[level].SIZE - 1) {
+    iEnd = gLevels[level].SIZE - 1;
+  }
+  if (j === 0) {
+    jStart = 0;
+  }
+  if (j === gLevels[level].SIZE - 1) {
+    jEnd = gLevels[level].SIZE - 1;
+  }
+  // reveal neighbors
+  for (var rowIdx = iStart; rowIdx <= iEnd; rowIdx++) {
+    for (var callIdx = jStart; callIdx <= jEnd; callIdx++) {
+      var prevState = gBoard[rowIdx][callIdx].isShown;
+      gBoard[rowIdx][callIdx].isShown = true;
+      returnPrevValFromHint(rowIdx, callIdx, prevState);
+    }
+  }
+  renderBoard();
+  isHintOn = false;
+}
+
+function returnPrevValFromHint(rowIdx, callIdx, prevState) {
+  setTimeout(
+    () => {
+      // debugger
+      console.log("hey!", prevState);
+      gBoard[rowIdx][callIdx].isShown = prevState;
+      renderBoard();
+    },
+    1000,
+    [rowIdx, callIdx, prevState]
+  );
+}
+
+function renderHurts() {
+  var elHursts = document.querySelector('.hurts');
+  elHursts.innerHTML = '';
+  for (var i = 0; i < gLivesCount; i++) {
+    elHursts.innerHTML += HURT;
+  }
 }
